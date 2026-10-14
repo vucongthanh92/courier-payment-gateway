@@ -1,8 +1,8 @@
 package models
 
-// ErrorDTO is the shared API error payload used by the copied helper packages.
-type ErrorDTO struct {
-	Message string `json:"message"`
-	Field   string `json:"field"`
-	Code    string `json:"code"`
-}
+import utilsModels "github.com/vucongthanh92/go-base-utils/models"
+
+// ErrorDTO aliases the shared Courier API error contract. Keeping the domain
+// alias avoids leaking a package-level dependency into payment business DTOs
+// while ensuring handlers, middleware and use cases produce one response shape.
+type ErrorDTO = utilsModels.ErrorDTO

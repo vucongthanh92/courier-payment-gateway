@@ -6,12 +6,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/vucongthanh92/courier-payment-gateway/config"
-	errHandler "github.com/vucongthanh92/courier-payment-gateway/helper/error_handler"
 	"github.com/vucongthanh92/courier-payment-gateway/internal/api/http/middleware"
 	v1 "github.com/vucongthanh92/courier-payment-gateway/internal/api/http/v1"
 	"github.com/vucongthanh92/courier-payment-gateway/internal/domain/interfaces"
 	cacheRepo "github.com/vucongthanh92/courier-payment-gateway/internal/repository/external/redis"
 	usergrpc "github.com/vucongthanh92/courier-payment-gateway/internal/repository/external/user_grpc"
+	errHandler "github.com/vucongthanh92/go-base-utils/helper/http_error"
+	utilsMidd "github.com/vucongthanh92/go-base-utils/http/middlewares"
 	httpserver "github.com/vucongthanh92/go-base-utils/http/server"
 )
 
@@ -61,7 +62,7 @@ func (s *Server) Run() {
 	keyResolver := func(ctx context.Context, kid string) (interface{}, *errHandler.ErrorBuilder) {
 		return middleware.ResolvePublicKey(ctx, s.jwkCache, s.userGrpc, kid)
 	}
-	authMW := middleware.JWTMiddleware(s.tokenDeny, keyResolver)
+	authMW := utilsMidd.JWTMiddleware(s.tokenDeny, keyResolver)
 
 	// In the future, if we have v2, v3..., we will add at here
 	v1.MapRoutes(

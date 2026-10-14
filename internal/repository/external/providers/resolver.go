@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"strings"
 
-	errHandler "github.com/vucongthanh92/courier-payment-gateway/helper/error_handler"
 	"github.com/vucongthanh92/courier-payment-gateway/internal/domain/interfaces"
 	"github.com/vucongthanh92/courier-payment-gateway/internal/domain/models"
 	"github.com/vucongthanh92/courier-payment-gateway/internal/repository/external/providers/sepay"
+	errHandler "github.com/vucongthanh92/go-base-utils/helper/http_error"
 )
 
 type resolver struct {

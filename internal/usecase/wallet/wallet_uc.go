@@ -6,11 +6,11 @@ import (
 	"net/http"
 
 	"github.com/vucongthanh92/courier-payment-gateway/helper/constants"
-	errHandler "github.com/vucongthanh92/courier-payment-gateway/helper/error_handler"
 	"github.com/vucongthanh92/courier-payment-gateway/helper/utils"
 	"github.com/vucongthanh92/courier-payment-gateway/internal/domain/entities"
 	"github.com/vucongthanh92/courier-payment-gateway/internal/domain/interfaces"
 	"github.com/vucongthanh92/courier-payment-gateway/internal/domain/models"
+	errHandler "github.com/vucongthanh92/go-base-utils/helper/http_error"
 )
 
 type walletUsecase struct {

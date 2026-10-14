@@ -10,7 +10,6 @@ import (
 	"github.com/google/wire"
 	"github.com/vucongthanh92/courier-payment-gateway/config"
 	"github.com/vucongthanh92/courier-payment-gateway/database"
-	"github.com/vucongthanh92/courier-payment-gateway/helper/transaction"
 	"github.com/vucongthanh92/courier-payment-gateway/internal/api"
 	"github.com/vucongthanh92/courier-payment-gateway/internal/api/grpc"
 	"github.com/vucongthanh92/courier-payment-gateway/internal/api/http"
@@ -32,12 +31,15 @@ import (
 	wallet2 "github.com/vucongthanh92/courier-payment-gateway/internal/usecase/wallet"
 	"github.com/vucongthanh92/courier-payment-gateway/internal/usecase/webhook"
 	"github.com/vucongthanh92/courier-payment-gateway/redis"
+	"github.com/vucongthanh92/go-base-utils/helper/transaction"
+	"github.com/vucongthanh92/go-base-utils/models"
 )
 
 // Injectors from wire.go:
 
 func InitializeContainer(cfg *config.AppConfig, readDB *database.GormReadDb, writeDB *database.GormWriteDb, redisClient redis.Client) *api.ApiContainer {
-	managerTxn := transaction.InitManagerTxn(writeDB)
+	gormWriteDb := provideTransactionWriteDB(writeDB)
+	managerTxn := transaction.InitManagerTxn(gormWriteDb)
 	walletQueryRepoI := wallet.InitWalletQueryRepository(readDB)
 	walletCommandRepoI := wallet.InitWalletCmdRepository(writeDB)
 	walletServiceI := wallet2.InitWalletUsecase(walletQueryRepoI, walletCommandRepoI)
@@ -70,7 +72,9 @@ func InitializeContainer(cfg *config.AppConfig, readDB *database.GormReadDb, wri
 
 // wire.go:
 
-var repoSet = wire.NewSet(transaction.InitManagerTxn, wallet.InitWalletCmdRepository, wallet.InitWalletQueryRepository, topup.InitTopUpCmdRepository, topup.InitTopUpQueryRepository, idempotency.InitIdempotencyCmdRepository, auditlog.InitAuditLogCmdRepository, provider_event.InitProviderEventCmdRepository, ledger.InitLedgerCmdRepository, ledger.InitLedgerQueryRepository, outbox.InitOutboxCmdRepository, sepay.New, providers.InitPaymentGatewayResolver, redis2.InitRedisDenylist, redis2.InitJWKCacheRepo, user_grpc.NewGrpcClient)
+var repoSet = wire.NewSet(
+	provideTransactionWriteDB, transaction.InitManagerTxn, wallet.InitWalletCmdRepository, wallet.InitWalletQueryRepository, topup.InitTopUpCmdRepository, topup.InitTopUpQueryRepository, idempotency.InitIdempotencyCmdRepository, auditlog.InitAuditLogCmdRepository, provider_event.InitProviderEventCmdRepository, ledger.InitLedgerCmdRepository, ledger.InitLedgerQueryRepository, outbox.InitOutboxCmdRepository, sepay.New, providers.InitPaymentGatewayResolver, redis2.InitRedisDenylist, redis2.InitJWKCacheRepo, user_grpc.NewGrpcClient,
+)
 
 var serviceSet = wire.NewSet(idempotency2.InitIdempotencyUsecase, auditlog2.InitAuditLogUsecase, wallet2.InitWalletUsecase, topup2.InitTopUpUsecase, webhook.InitSePayWebhookUsecase)
 
@@ -78,4 +82,9 @@ var handlerSet = wire.NewSet(v1.InitTopUpHandler, v1.InitWalletHandler, v1.InitS
 
 var apiSet = wire.NewSet(http.NewServer, grpc.NewServer, api.NewApiContainer)
 
-func provideSePayConfig(cfg *config.AppConfig) config.SePayConfig { return cfg.SePay }
+func provideSePayConfig(cfg *config.AppConfig) models.SePayConfig { return cfg.SePay }
+
+func provideTransactionWriteDB(writeDB *database.GormWriteDb) *transaction.GormWriteDb {
+	converted := transaction.GormWriteDb(*writeDB)
+	return &converted
+}

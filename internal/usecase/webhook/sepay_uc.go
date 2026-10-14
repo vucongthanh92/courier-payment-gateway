@@ -3,19 +3,18 @@ package webhook
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/vucongthanh92/courier-payment-gateway/helper/constants"
-	errHandler "github.com/vucongthanh92/courier-payment-gateway/helper/error_handler"
-	"github.com/vucongthanh92/courier-payment-gateway/helper/transaction"
 	"github.com/vucongthanh92/courier-payment-gateway/helper/utils"
 	"github.com/vucongthanh92/courier-payment-gateway/internal/domain/entities"
 	"github.com/vucongthanh92/courier-payment-gateway/internal/domain/interfaces"
 	"github.com/vucongthanh92/courier-payment-gateway/internal/domain/models"
 	"github.com/vucongthanh92/courier-payment-gateway/internal/repository/external/providers/sepay"
+	errHandler "github.com/vucongthanh92/go-base-utils/helper/http_error"
+	"github.com/vucongthanh92/go-base-utils/helper/transaction"
 )
 
 type sePayWebhookUsecase struct {
@@ -80,11 +79,12 @@ func (u *sePayWebhookUsecase) ProcessBankWebhook(ctx context.Context, req models
 
 	// Process the webhook within a transaction to ensure atomicity
 	err := u.txn.Do(ctx, func(txCtx context.Context) *errHandler.ErrorBuilder {
+		rollback := transaction.Rollback
 
 		// Create a new provider event for the webhook and check if it already exists
 		created, commonErr := u.events.CreateIfAbsent(txCtx, &event)
 		if commonErr != nil {
-			return commonErr
+			return rollback(commonErr)
 		}
 		if !created {
 			result = models.WebhookDuplicate
@@ -93,49 +93,49 @@ func (u *sePayWebhookUsecase) ProcessBankWebhook(ctx context.Context, req models
 
 		// Check if the webhook is eligible for processing based on its transfer type and code
 		if req.TransferType != constants.TransferTypeIn || req.Code == nil || *req.Code == "" {
-			return u.ProcessIgnore(txCtx, eventID, constants.TRANSACTION_NOT_ELIGIBLE_CODE, &result)
+			return rollback(u.ProcessIgnore(txCtx, eventID, constants.TRANSACTION_NOT_ELIGIBLE_CODE, &result))
 		}
 
 		// Retrieve the top-up intent associated with the payment code and validate its status
 		intent, commonErr := u.topups.GetForUpdateByPaymentCode(txCtx, constants.SePayProvider, *req.Code)
 		if commonErr != nil {
 			if commonErr.Status == http.StatusNotFound {
-				return u.ProcessIgnore(txCtx, eventID, constants.TOPUP_INTENT_NOT_FOUND_CODE, &result)
+				return rollback(u.ProcessIgnore(txCtx, eventID, constants.TOPUP_INTENT_NOT_FOUND_CODE, &result))
 			}
-			return commonErr
+			return rollback(commonErr)
 		}
 
 		// Check if the top-up intent has already been marked as succeeded or is not eligible for processing
 		if intent.CheckIsSucceeded() {
-			return u.ProcessIgnore(txCtx, eventID, constants.TOPUP_ALREADY_SUCCEEDED_CODE, &result)
+			return rollback(u.ProcessIgnore(txCtx, eventID, constants.TOPUP_ALREADY_SUCCEEDED_CODE, &result))
 		}
 
 		// Validate the top-up intent's status and expiration before proceeding with the wallet crediting process
 		if intent.CheckStatusAndExpires() {
-			return u.ProcessIgnore(txCtx, eventID, "topup_not_payable", &result)
+			return rollback(u.ProcessIgnore(txCtx, eventID, "topup_not_payable", &result))
 		}
 
 		// Check if the transfer amount in the webhook matches the expected amount in the top-up intent
 		if intent.CheckAmountMinor(req.TransferAmount) {
-			return u.ProcessIgnore(txCtx, eventID, constants.AMOUNT_MISMATCH_CODE, &result)
+			return rollback(u.ProcessIgnore(txCtx, eventID, constants.AMOUNT_MISMATCH_CODE, &result))
 		}
 
 		// Retrieve the wallet's liability account and the clearing account for ledger entries
 		walletAccount, commonErr := u.ledgerQuery.GetWalletLiabilityAccount(txCtx, intent.WalletID)
 		if commonErr != nil {
-			return commonErr
+			return rollback(commonErr)
 		}
 
 		// Retrieve the clearing account for ledger entries
 		clearing, commonErr := u.ledgerQuery.GetAccountByCode(txCtx, "asset:sepay:clearing:vnd")
 		if commonErr != nil {
-			return commonErr
+			return rollback(commonErr)
 		}
 
 		// Generate unique IDs for the journal and ledger entries to ensure proper tracking of the top-up transaction
 		journalID, e := utils.NewSnowflakeID()
 		if e != nil {
-			return errHandler.InitErrorBuilder(txCtx).ValidateError(e)
+			return rollback(errHandler.InitErrorBuilder(txCtx).ValidateError(e))
 		}
 
 		// Create ledger journal entries for the top-up transaction, including debit and credit entries
@@ -163,7 +163,7 @@ func (u *sePayWebhookUsecase) ProcessBankWebhook(ctx context.Context, req models
 
 		// Create the journal and ledger entries in the database to record the top-up transaction
 		if commonErr = u.ledgerCmd.CreateJournalEntries(txCtx, journal, ledgerEntries); commonErr != nil {
-			return commonErr
+			return rollback(commonErr)
 		}
 
 		// Parse the transaction date from the webhook and create a provider transaction record in the database
@@ -173,12 +173,12 @@ func (u *sePayWebhookUsecase) ProcessBankWebhook(ctx context.Context, req models
 			time.FixedZone(constants.GlobalTimeZoneHoChiMinh, 7*3600),
 		)
 		if parseErr != nil {
-			return errHandler.InitErrorBuilder(txCtx).
+			return rollback(errHandler.InitErrorBuilder(txCtx).
 				SetStatus(http.StatusBadRequest).SetLogError(parseErr).
 				SetError(models.ErrorDTO{
 					Code:    "invalid_provider_date",
 					Message: "invalid SePay transaction date"},
-				)
+				))
 		}
 
 		// Create a provider transaction record in the database to track the top-up transaction with SePay
@@ -198,17 +198,17 @@ func (u *sePayWebhookUsecase) ProcessBankWebhook(ctx context.Context, req models
 
 		// Create the provider transaction record in the database to track the top-up transaction with SePay
 		if commonErr = u.ledgerCmd.CreateProviderTransaction(txCtx, providerTxn); commonErr != nil {
-			return commonErr
+			return rollback(commonErr)
 		}
 
 		// Mark the top-up intent as succeeded, credit the user's wallet, and create an outbox event for further processing
 		if commonErr = u.topupCmd.MarkSucceeded(txCtx, intent.ID, req.AccountNumber); commonErr != nil {
-			return commonErr
+			return rollback(commonErr)
 		}
 
 		// Credit the user's wallet with the transfer amount from the top-up intent
 		if commonErr = u.wallets.CreditAvailable(txCtx, intent.WalletID, req.TransferAmount); commonErr != nil {
-			return commonErr
+			return rollback(commonErr)
 		}
 
 		// Create an outbox event to notify other services of the wallet crediting operation
@@ -232,7 +232,7 @@ func (u *sePayWebhookUsecase) ProcessBankWebhook(ctx context.Context, req models
 
 		// Create the outbox event in the database to notify other services of the wallet crediting operation
 		if commonErr = u.outbox.Create(txCtx, outbox); commonErr != nil {
-			return commonErr
+			return rollback(commonErr)
 		}
 
 		auditMetadata, marshalErr := json.Marshal(map[string]any{
@@ -246,7 +246,7 @@ func (u *sePayWebhookUsecase) ProcessBankWebhook(ctx context.Context, req models
 			"reference_code":          req.ReferenceCode,
 		})
 		if marshalErr != nil {
-			return errHandler.InitErrorBuilder(txCtx).ValidateError(marshalErr)
+			return rollback(errHandler.InitErrorBuilder(txCtx).ValidateError(marshalErr))
 		}
 
 		providerActorID := constants.SePayProvider
@@ -258,12 +258,12 @@ func (u *sePayWebhookUsecase) ProcessBankWebhook(ctx context.Context, req models
 			ResourceID:   fmt.Sprint(intent.ID),
 			Metadata:     auditMetadata,
 		}); commonErr != nil {
-			return commonErr
+			return rollback(commonErr)
 		}
 
 		// Mark the provider event as processed to prevent duplicate processing of the same webhook
 		if commonErr = u.events.MarkProcessed(txCtx, eventID); commonErr != nil {
-			return commonErr
+			return rollback(commonErr)
 		}
 
 		result = models.WebhookCredited
@@ -271,9 +271,8 @@ func (u *sePayWebhookUsecase) ProcessBankWebhook(ctx context.Context, req models
 	})
 
 	if err != nil {
-		var transactionErr *transaction.Error
-		if errors.As(err, &transactionErr) && transactionErr.Builder != nil {
-			return result, transactionErr.Builder
+		if transactionErr := transaction.BuilderFromError(err); transactionErr != nil {
+			return result, transactionErr
 		}
 		return result, errHandler.InitErrorBuilder(ctx).ValidateError(err)
 	}

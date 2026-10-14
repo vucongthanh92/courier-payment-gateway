@@ -3,11 +3,14 @@ package startup
 import (
 	"flag"
 	"log"
+	"time"
 
 	"github.com/vucongthanh92/courier-payment-gateway/config"
 	"github.com/vucongthanh92/courier-payment-gateway/database"
+	"github.com/vucongthanh92/courier-payment-gateway/helper/utils"
 	"github.com/vucongthanh92/courier-payment-gateway/internal"
 	"github.com/vucongthanh92/courier-payment-gateway/redis"
+	"github.com/vucongthanh92/go-base-utils/tracing"
 )
 
 func Execute() {
@@ -17,6 +20,15 @@ func Execute() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	if cfg.Tracing != nil {
+		tracing.UseOpenTelemetry(tracing.Config(*cfg.Tracing))
+	}
+
+	utils.InitSnowflake(utils.SnowflakeConfig{
+		MachineID:   3,
+		CustomEpoch: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+	})
+
 	readDB, writeDB := database.GetConnectByGorm(cfg.Database)
 	if readDB == nil || writeDB == nil {
 		log.Fatal("open payment-gateway database connections")

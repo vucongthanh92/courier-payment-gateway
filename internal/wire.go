@@ -7,7 +7,6 @@ import (
 	"github.com/google/wire"
 	"github.com/vucongthanh92/courier-payment-gateway/config"
 	"github.com/vucongthanh92/courier-payment-gateway/database"
-	"github.com/vucongthanh92/courier-payment-gateway/helper/transaction"
 	"github.com/vucongthanh92/courier-payment-gateway/internal/api"
 	grpcapi "github.com/vucongthanh92/courier-payment-gateway/internal/api/grpc"
 	httpapi "github.com/vucongthanh92/courier-payment-gateway/internal/api/http"
@@ -29,9 +28,12 @@ import (
 	walletuc "github.com/vucongthanh92/courier-payment-gateway/internal/usecase/wallet"
 	webhook "github.com/vucongthanh92/courier-payment-gateway/internal/usecase/webhook"
 	"github.com/vucongthanh92/courier-payment-gateway/redis"
+	"github.com/vucongthanh92/go-base-utils/helper/transaction"
+	"github.com/vucongthanh92/go-base-utils/models"
 )
 
 var repoSet = wire.NewSet(
+	provideTransactionWriteDB,
 	transaction.InitManagerTxn,
 	wallet.InitWalletCmdRepository, wallet.InitWalletQueryRepository,
 	topuprepo.InitTopUpCmdRepository, topuprepo.InitTopUpQueryRepository,
@@ -53,7 +55,12 @@ var serviceSet = wire.NewSet(
 var handlerSet = wire.NewSet(v1.InitTopUpHandler, v1.InitWalletHandler, v1.InitSePayWebhookHandler)
 var apiSet = wire.NewSet(httpapi.NewServer, grpcapi.NewServer, api.NewApiContainer)
 
-func provideSePayConfig(cfg *config.AppConfig) config.SePayConfig { return cfg.SePay }
+func provideSePayConfig(cfg *config.AppConfig) models.SePayConfig { return cfg.SePay }
+
+func provideTransactionWriteDB(writeDB *database.GormWriteDb) *transaction.GormWriteDb {
+	converted := transaction.GormWriteDb(*writeDB)
+	return &converted
+}
 
 func InitializeContainer(cfg *config.AppConfig, readDB *database.GormReadDb, writeDB *database.GormWriteDb, redisClient redis.Client) *api.ApiContainer {
 	wire.Build(repoSet, serviceSet, handlerSet, apiSet, provideSePayConfig)

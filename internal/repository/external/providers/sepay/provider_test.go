@@ -5,12 +5,12 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/vucongthanh92/courier-payment-gateway/config"
 	"github.com/vucongthanh92/courier-payment-gateway/internal/domain/interfaces"
+	"github.com/vucongthanh92/go-base-utils/models"
 )
 
 func TestCreateTopUpBuildsSandboxCheckoutForm(t *testing.T) {
-	provider := New(config.SePayConfig{
+	provider := New(models.SePayConfig{
 		MerchantID:  "sandbox-merchant",
 		SecretKey:   "sandbox-secret",
 		CheckoutURL: "https://pay-sandbox.sepay.vn/v1/checkout/init",
@@ -33,7 +33,7 @@ func TestCreateTopUpBuildsSandboxCheckoutForm(t *testing.T) {
 }
 
 func TestCreateTopUpRejectsUnsupportedMethod(t *testing.T) {
-	provider := New(config.SePayConfig{MerchantID: "merchant", SecretKey: "secret"})
+	provider := New(models.SePayConfig{MerchantID: "merchant", SecretKey: "secret"})
 	_, err := provider.CreateTopUp(context.Background(), interfaces.CreateTopUpInput{Method: "wallet"})
 	require.ErrorContains(t, err, "unsupported sepay method")
 }

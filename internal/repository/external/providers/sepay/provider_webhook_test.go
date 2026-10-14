@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"github.com/vucongthanh92/courier-payment-gateway/config"
+	"github.com/vucongthanh92/go-base-utils/models"
 )
 
 func TestVerifyBankWebhook(t *testing.T) {
@@ -20,7 +20,7 @@ func TestVerifyBankWebhook(t *testing.T) {
 	_, _ = mac.Write(body)
 	signature := "sha256=" + hex.EncodeToString(mac.Sum(nil))
 
-	provider := New(config.SePayConfig{WebhookSecret: secret, TimestampToleranceSec: 300})
+	provider := New(models.SePayConfig{WebhookSecret: secret, TimestampToleranceSec: 300})
 	require.NoError(t, provider.VerifyBankWebhook(body, signature, "1787213762", now))
 	require.Error(t, provider.VerifyBankWebhook(body, "sha256=wrong", "1787213762", now))
 }

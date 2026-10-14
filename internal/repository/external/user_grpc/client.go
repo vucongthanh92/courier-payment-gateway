@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"github.com/vucongthanh92/courier-payment-gateway/config"
-	errhandler "github.com/vucongthanh92/courier-payment-gateway/helper/error_handler"
 	jwkpb "github.com/vucongthanh92/courier/shared/grpc/user-service/jwk/gen"
+	errhandler "github.com/vucongthanh92/go-base-utils/helper/http_error"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )

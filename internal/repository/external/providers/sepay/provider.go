@@ -11,15 +11,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vucongthanh92/courier-payment-gateway/config"
 	"github.com/vucongthanh92/courier-payment-gateway/internal/domain/interfaces"
+	"github.com/vucongthanh92/go-base-utils/models"
 )
 
 type Provider struct {
-	cfg config.SePayConfig
+	cfg models.SePayConfig
 }
 
-func New(cfg config.SePayConfig) *Provider {
+func New(cfg models.SePayConfig) *Provider {
 	return &Provider{cfg: cfg}
 }
 

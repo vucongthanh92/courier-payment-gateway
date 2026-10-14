@@ -3,18 +3,17 @@ package topup
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/vucongthanh92/courier-payment-gateway/helper/constants"
-	errHandler "github.com/vucongthanh92/courier-payment-gateway/helper/error_handler"
-	"github.com/vucongthanh92/courier-payment-gateway/helper/transaction"
 	"github.com/vucongthanh92/courier-payment-gateway/helper/utils"
 	"github.com/vucongthanh92/courier-payment-gateway/internal/domain/entities"
 	"github.com/vucongthanh92/courier-payment-gateway/internal/domain/interfaces"
 	"github.com/vucongthanh92/courier-payment-gateway/internal/domain/models"
+	errHandler "github.com/vucongthanh92/go-base-utils/helper/http_error"
+	"github.com/vucongthanh92/go-base-utils/helper/transaction"
 )
 
 type topUpUsecase struct {
@@ -51,6 +50,7 @@ func (u *topUpUsecase) CreateTopUp(ctx context.Context, req models.CreateTopUpRe
 
 	// Run the top-up creation process within a transaction to ensure atomicity
 	if err := u.txn.Do(ctx, func(txCtx context.Context) *errHandler.ErrorBuilder {
+		rollback := transaction.Rollback
 
 		// Claim an idempotency key to ensure that the same request is not processed multiple times
 		claim, txnErr := u.idempotency.Claim(txCtx, models.IdempotencyClaimRequest{
@@ -61,14 +61,14 @@ func (u *topUpUsecase) CreateTopUp(ctx context.Context, req models.CreateTopUpRe
 			ExpiresIn: constants.Time_Cache_1_day,
 		})
 		if txnErr != nil {
-			return txnErr
+			return rollback(txnErr)
 		}
 
 		// If the idempotency record was not created, it means that the same request has already been processed
 		if !claim.Created {
 			// If the idempotency record exists and has a response, return the stored response to avoid duplicate processing
 			if err := json.Unmarshal(claim.ResponseBody, &response); err != nil {
-				return errHandler.InitErrorBuilder(txCtx).ValidateError(err)
+				return rollback(errHandler.InitErrorBuilder(txCtx).ValidateError(err))
 			}
 			replayed = true
 			return nil
@@ -78,28 +78,28 @@ func (u *topUpUsecase) CreateTopUp(ctx context.Context, req models.CreateTopUpRe
 		// This allows the system to support multiple payment providers dynamically
 		provider, txnErr := u.resolver.Resolve(txCtx, req.ProviderName)
 		if txnErr != nil {
-			return txnErr
+			return rollback(txnErr)
 		}
 
 		// Get or create the user's wallet for the top-up operation
 		wallet, txnErr := u.wallet.GetOrCreateWallet(txCtx, req.UserID)
 		if txnErr != nil {
-			return txnErr
+			return rollback(txnErr)
 		}
 
 		// Check if the wallet is active before proceeding with the top-up
 		if wallet.Status != constants.WalletStatusActive {
-			return errHandler.InitErrorBuilder(txCtx).SetStatus(http.StatusUnprocessableEntity).
+			return rollback(errHandler.InitErrorBuilder(txCtx).SetStatus(http.StatusUnprocessableEntity).
 				SetError(models.ErrorDTO{
 					Code:    constants.WALLET_INACTIVE_CODE,
 					Message: constants.ErrWalletInactive,
-				})
+				}))
 		}
 
 		// Generate a unique invoice number for the top-up operation and create a checkout with the payment gateway
 		topupID, idErr := utils.NewSnowflakeID()
 		if idErr != nil {
-			return errHandler.InitErrorBuilder(txCtx).ValidateError(idErr)
+			return rollback(errHandler.InitErrorBuilder(txCtx).ValidateError(idErr))
 		}
 
 		// Create a unique invoice number for the top-up operation and create a checkout with the payment gateway
@@ -109,7 +109,7 @@ func (u *topUpUsecase) CreateTopUp(ctx context.Context, req models.CreateTopUpRe
 			constants.SePayPaymentCodeLength,
 		)
 		if paymentCodeErr != nil {
-			return errHandler.InitErrorBuilder(txCtx).ValidateError(paymentCodeErr)
+			return rollback(errHandler.InitErrorBuilder(txCtx).ValidateError(paymentCodeErr))
 		}
 
 		// Call the payment gateway to create a top-up checkout instruction with the generated invoice number and payment code
@@ -124,11 +124,11 @@ func (u *topUpUsecase) CreateTopUp(ctx context.Context, req models.CreateTopUpRe
 
 		// If the payment provider returns an error during the checkout creation, return an appropriate error response
 		if providerErr != nil {
-			return errHandler.InitErrorBuilder(txCtx).SetStatus(http.StatusUnprocessableEntity).
+			return rollback(errHandler.InitErrorBuilder(txCtx).SetStatus(http.StatusUnprocessableEntity).
 				SetLogError(providerErr).SetError(models.ErrorDTO{
 				Code:    constants.PROVIDER_CHECKOUT_FAILED_CODE,
 				Message: constants.ErrProviderSepayCheckoutFailed,
-			})
+			}))
 		}
 
 		// Create a new top-up intent in the database with the generated invoice number and checkout details
@@ -146,7 +146,7 @@ func (u *topUpUsecase) CreateTopUp(ctx context.Context, req models.CreateTopUpRe
 		)
 
 		if txnErr = u.topUpCmd.Create(txCtx, &intent); txnErr != nil {
-			return txnErr
+			return rollback(txnErr)
 		}
 
 		auditMetadata, marshalErr := json.Marshal(map[string]any{
@@ -158,7 +158,7 @@ func (u *topUpUsecase) CreateTopUp(ctx context.Context, req models.CreateTopUpRe
 			"provider_invoice_number": invoice,
 		})
 		if marshalErr != nil {
-			return errHandler.InitErrorBuilder(txCtx).ValidateError(marshalErr)
+			return rollback(errHandler.InitErrorBuilder(txCtx).ValidateError(marshalErr))
 		}
 
 		actorID := fmt.Sprint(req.UserID)
@@ -170,7 +170,7 @@ func (u *topUpUsecase) CreateTopUp(ctx context.Context, req models.CreateTopUpRe
 			ResourceID:   fmt.Sprint(intent.ID),
 			Metadata:     auditMetadata,
 		}); txnErr != nil {
-			return txnErr
+			return rollback(txnErr)
 		}
 
 		// Prepare the response with the checkout instruction and top-up details to be returned to the client
@@ -180,12 +180,11 @@ func (u *topUpUsecase) CreateTopUp(ctx context.Context, req models.CreateTopUpRe
 			CheckoutAction: checkout.Action, CheckoutFields: checkout.Fields,
 		}
 
-		return u.idempotency.Complete(txCtx, claim.Record.ID, http.StatusCreated, response)
+		return rollback(u.idempotency.Complete(txCtx, claim.Record.ID, http.StatusCreated, response))
 
 	}); err != nil {
-		var transactionErr *transaction.Error
-		if errors.As(err, &transactionErr) && transactionErr.Builder != nil {
-			return response, false, transactionErr.Builder
+		if transactionErr := transaction.BuilderFromError(err); transactionErr != nil {
+			return response, false, transactionErr
 		}
 		return response, false, errHandler.InitErrorBuilder(ctx).ValidateError(err)
 	}

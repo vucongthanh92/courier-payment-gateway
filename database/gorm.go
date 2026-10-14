@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/vucongthanh92/courier-payment-gateway/config"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+
+	"github.com/vucongthanh92/go-base-utils/models"
 )
 
 type GormReadDb *gorm.DB
@@ -23,7 +24,7 @@ func Open(connectionString string) (*gorm.DB, error) {
 
 // GetConnectByGorm keeps the same read/write database contract as the other
 // Courier services. Local development may point both connections at one DB.
-func GetConnectByGorm(cfg *config.DatabaseConfig) (GormReadDb, GormWriteDb) {
+func GetConnectByGorm(cfg *models.DatabaseConfig) (GormReadDb, GormWriteDb) {
 	readDB, err := openAndConfigure(cfg.ReadDbCfg.ConnectionString, cfg.ReadDbCfg.MaxIdleConns, cfg.ReadDbCfg.MaxOpenConns, cfg.ReadDbCfg.ConnMaxLifetime)
 	if err != nil {
 		return nil, nil

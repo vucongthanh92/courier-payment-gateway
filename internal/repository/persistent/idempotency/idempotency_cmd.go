@@ -3,12 +3,13 @@ package idempotency
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/vucongthanh92/courier-payment-gateway/database"
-	errHandler "github.com/vucongthanh92/courier-payment-gateway/helper/error_handler"
-	"github.com/vucongthanh92/courier-payment-gateway/helper/transaction"
 	"github.com/vucongthanh92/courier-payment-gateway/internal/domain/entities"
 	"github.com/vucongthanh92/courier-payment-gateway/internal/domain/interfaces"
+	errHandler "github.com/vucongthanh92/go-base-utils/helper/http_error"
+	"github.com/vucongthanh92/go-base-utils/helper/transaction"
 	"gorm.io/gorm"
 )
 
@@ -59,5 +60,11 @@ func (r *idempotencyCmdRepository) Complete(ctx context.Context, id uint64, stat
 
 // isUnique checks if the provided error is a unique constraint violation error, indicating that a record with the same unique key already exists in the database. It returns true if the error is a unique constraint violation, and false otherwise.
 func isUnique(err error) bool {
-	return errors.Is(err, gorm.ErrDuplicatedKey) || errHandler.InitErrorBuilder(context.Background()).SetLogError(err).IsUniqueViolation()
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return true
+	}
+
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "sqlstate 23505") ||
+		strings.Contains(message, "duplicate key")
 }
