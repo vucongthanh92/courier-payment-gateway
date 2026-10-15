@@ -1,0 +1,5 @@
+.git
+.github
+.gocache
+vendor
+*.md

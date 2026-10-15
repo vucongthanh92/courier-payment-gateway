@@ -1,12 +1,14 @@
 package startup
 
 import (
+	"context"
 	"flag"
 	"log"
 	"time"
 
 	"github.com/vucongthanh92/courier-payment-gateway/config"
 	"github.com/vucongthanh92/courier-payment-gateway/database"
+	healthcheck "github.com/vucongthanh92/courier-payment-gateway/helper/healthcheck"
 	"github.com/vucongthanh92/courier-payment-gateway/helper/utils"
 	"github.com/vucongthanh92/courier-payment-gateway/internal"
 	"github.com/vucongthanh92/courier-payment-gateway/redis"
@@ -34,6 +36,7 @@ func Execute() {
 		log.Fatal("open payment-gateway database connections")
 	}
 	container := internal.InitializeContainer(cfg, &readDB, &writeDB, redis.Open(cfg.Redis))
+	go healthcheck.RunHealthCheck(context.Background(), cfg, readDB, writeDB)()
 	go container.GrpcServer.Run()
 	container.HttpServer.Run()
 }

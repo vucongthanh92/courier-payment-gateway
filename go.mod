@@ -11,7 +11,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/swaggo/files v1.0.1
 	github.com/swaggo/gin-swagger v1.6.1
-	github.com/vucongthanh92/courier/shared v0.0.0-20260813080757-e50c3f7fdaf2
+	github.com/vucongthanh92/courier/shared v0.0.0-20261011113145-43c7030c3c51
 	github.com/vucongthanh92/go-base-utils v1.2.14
 	go.uber.org/zap v1.27.0
 	google.golang.org/grpc v1.82.0
@@ -127,5 +127,3 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/vucongthanh92/courier/shared => ../courier-common/shared
