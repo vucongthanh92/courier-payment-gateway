@@ -11,6 +11,7 @@ import (
 	healthcheck "github.com/vucongthanh92/courier-payment-gateway/helper/healthcheck"
 	"github.com/vucongthanh92/courier-payment-gateway/helper/utils"
 	"github.com/vucongthanh92/courier-payment-gateway/internal"
+	"github.com/vucongthanh92/courier-payment-gateway/internal/profiling"
 	"github.com/vucongthanh92/courier-payment-gateway/redis"
 	"github.com/vucongthanh92/go-base-utils/tracing"
 )
@@ -24,6 +25,16 @@ func Execute() {
 	}
 	if cfg.Tracing != nil {
 		tracing.UseOpenTelemetry(tracing.Config(*cfg.Tracing))
+	}
+	stopProfiler, profilerEnabled, err := profiling.Start(cfg.ServiceName)
+	if err != nil {
+		log.Printf("continuous profiling is unavailable: %v", err)
+	} else if profilerEnabled {
+		defer func() {
+			if err := stopProfiler(); err != nil {
+				log.Printf("stop continuous profiling: %v", err)
+			}
+		}()
 	}
 
 	utils.InitSnowflake(utils.SnowflakeConfig{
